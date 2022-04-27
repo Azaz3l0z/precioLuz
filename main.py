@@ -1,5 +1,6 @@
 import os
 import requests
+import calendar
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -32,58 +33,58 @@ class luzScrapper():
         
         return url
 
-    def __create_requests(self, ini_date: str, end_date: str, 
-                          time_frame: str = 'hour'):
-        ini_DATE = datetime.strptime(ini_date, '%Y-%m-%dT%H:%M')
-        end_DATE = datetime.strptime(end_date, '%Y-%m-%dT%H:%M')
+    def __create_data(self, ini_date, end_date, time_frame: str = 'hour'):
+        ini_date = datetime.strptime(ini_date, '%Y-%m-%dT%H:%M')
+        end_date = datetime.strptime(end_date, '%Y-%m-%dT%H:%M')
+
         hour_cap = 28*24 - 1
 
-        diff = (end_DATE - ini_DATE)
-        diff = int(diff.total_seconds()/3600)
-        # https://stackoverflow.com/questions/2356501/how-do-you-round-up-a-number
-        n = (diff // hour_cap) + (diff%hour_cap > 0)
+        diff_month = (end_date.year - ini_date.year)*12 + end_date.month - \
+            ini_date.month
         
-        for k in range(n):
-            # We calculate the end date adding more hours each time
-            end = ini_DATE + timedelta(hours=hour_cap)
-            # If we pass the end_date we don't do anything
-            if end > end_DATE:
-                end = end_DATE
-            # We get the url and data
-            url = self.__make_url(ini_DATE, end, time_frame)
+        print(diff_month+1)
+        
+        for k in range(diff_month + 1):
+            end = calendar.monthrange(ini_date.year, ini_date.month)[1]
+            end = ini_date.replace(day=end, hour=23)
+            if end > end_date:
+                end = end_date
+            url = self.__make_url(ini_date, end, time_frame)
+            ini_date = end + timedelta(hours=1)
 
-            data = self.session.get(url)
-            self.data.extend(data.json()['included'][0]['attributes']['values'])
-            
-            # We set the initial date to the last one
-            ini_date = end
+            data = self.session.get(url).json()['included'][0]['attributes']['values']
+            self.data.extend(data)
+
+            print(url)
     
-    def do(self):
-        self.__create_requests('2022-02-22T01:00', '2022-04-26T00:00')
-        print(len(self.data))
+    def get_data(self, ini_date: str, end_date: str, format: str = 'hour'):
+        self.__create_data(ini_date, end_date)
+        
+        data = [x['value'] for x in self.data]
+        times = [datetime.fromisoformat(x['datetime']) for x in self.data]
 
-    #     data = r.json()['included'][0]['attributes']['values']
-    # price = [x['value'] for x in data]
-    # hours = [x['datetime'] for x in data]
+        return data, times
+
 
 def main():
+    os.chdir(os.path.abspath(os.path.dirname(__file__)))
+
+    # Data
     scrpr = luzScrapper()
-    scrpr.do()
-    # os.chdir(os.path.abspath(os.path.dirname(__file__)))
+    price, hours = scrpr.get_data('2021-04-21T01:00', '2022-04-27T00:00')
 
-    # price, hours = luzScrapper('2022-03-27T01:00', '2022-04-27T00:00')
-    # hours = [datetime.fromisoformat(x) for x in hours]
-    # print(len(hours))
-    # print(hours[0:2])
+    # Plotting
+    fig, ax = plt.subplots()
+    ax.scatter(hours, price, color='orange', s=10)
+    ax.plot(hours, price)
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=45))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m/%Y"))
 
-    # # Plotting
-    # fig, ax = plt.subplots()
-    # ax.scatter(hours, price, color='orange', s=10)
-    # ax.plot(hours, price)
-    # ax.xaxis.set_major_locator(mdates.DayLocator(interval=7))
-    # ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H"))
+    ax.set_xlabel('Día')
+    ax.set_ylabel('€/MWh')
     
-    # plt.show()
-
+    plt.show()
+    fig.savefig('precios.png')
+    
 if __name__ == '__main__':
     main()
